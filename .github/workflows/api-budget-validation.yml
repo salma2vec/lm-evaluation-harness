@@ -31,6 +31,7 @@ jobs:
         run: |
           mkdir -p evidence
           base=d6de81643928d653435c431bae19945d41d32520
+          git fetch origin "$base" --depth=1
           files='lm_eval/models/api_models.py lm_eval/models/openai_completions.py lm_eval/models/utils.py'
           for file in $files; do git show "$base:$file" > "$file"; done
           set +e
@@ -48,7 +49,7 @@ jobs:
           PY
       - name: Focused and adjacent native tests
         run: |
-          python -m pytest -q tests/models/test_api_generation_budget.py tests/models/test_api.py tests/models/test_local_chat_completion.py tests/models/test_model_utils.py --junitxml=evidence/after.xml | tee evidence/after.log
+          python -m pytest -q tests/models/test_api_generation_budget.py tests/models/test_api.py tests/models/test_local_chat_completion.py tests/models/test_anthropic_llms.py tests/models/test_model_utils.py --junitxml=evidence/after.xml | tee evidence/after.log
       - name: Changed-file checks
         env:
           SKIP: no-commit-to-branch
