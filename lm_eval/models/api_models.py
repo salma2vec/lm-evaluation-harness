@@ -460,6 +460,10 @@ class TemplateAPI(TemplateLM):
     ) -> dict | None:
         # !!! Copy: shared dict for each request, need new object !!!
         gen_kwargs = copy.deepcopy(gen_kwargs)
+        if generate and gen_kwargs is not None:
+            gen_kwargs["max_gen_toks"] = pop_max_gen_toks(
+                gen_kwargs, self._max_gen_toks
+            )
         try:
             response = requests.post(
                 self.base_url,
@@ -501,6 +505,10 @@ class TemplateAPI(TemplateLM):
     ) -> list[str] | list[tuple[float, bool]] | None:
         # !!! Copy: shared dict for each request, need new object !!!
         gen_kwargs = copy.deepcopy(gen_kwargs)
+        if generate and gen_kwargs is not None:
+            gen_kwargs["max_gen_toks"] = pop_max_gen_toks(
+                gen_kwargs, self._max_gen_toks
+            )
         payload = self._create_payload(
             self.create_message(messages),
             generate=generate,
