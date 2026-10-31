@@ -167,7 +167,12 @@ def test_completion_payload_resolves_length_aliases(
         post = Mock()
         monkeypatch.setattr("lm_eval.models.api_models.requests.post", post)
         model.header = {}
-        model.model_call(messages, generate=True, gen_kwargs=copy.deepcopy(limits))
+        call_messages = (
+            [model.apply_chat_template(messages)]
+            if model_cls is AnthropicChat
+            else ["hello"]
+        )
+        model.model_call(call_messages, generate=True, gen_kwargs=copy.deepcopy(limits))
         payload = post.call_args.kwargs["json"]
     else:
         payload = model._create_payload(
