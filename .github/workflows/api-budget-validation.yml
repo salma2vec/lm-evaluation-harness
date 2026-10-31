@@ -1,0 +1,68 @@
+name: API generation budget validation
+on:
+  push:
+    branches: [codex/verify-api-budget-20261031]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  api-budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.12', '3.13']
+    env:
+      TQDM_DISABLE: '1'
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: ${{ matrix.python }}
+          activate-environment: true
+      - name: Install CPU test dependencies
+        run: uv pip install -e '.[api,dev]' transformers ruff==0.16.3 pre-commit
+      - name: Verify baseline fails without collection errors
+        shell: bash
+        run: |
+          mkdir -p evidence
+          base=d6de81643928d653435c431bae19945d41d32520
+          files='lm_eval/models/api_models.py lm_eval/models/openai_completions.py lm_eval/models/utils.py'
+          for file in $files; do git show "$base:$file" > "$file"; done
+          set +e
+          python -m pytest -q tests/models/test_api_generation_budget.py --junitxml=evidence/before.xml > evidence/before.log 2>&1
+          status=$?
+          set -e
+          cat evidence/before.log
+          git checkout HEAD -- $files
+          test "$status" -eq 1
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          suites = ET.parse('evidence/before.xml').getroot().findall('testsuite')
+          assert sum(int(s.get('errors', 0)) for s in suites) == 0
+          assert sum(int(s.get('failures', 0)) for s in suites) > 0
+          PY
+      - name: Focused and adjacent native tests
+        run: |
+          python -m pytest -q tests/models/test_api_generation_budget.py tests/models/test_api.py tests/models/test_local_chat_completion.py tests/models/test_model_utils.py --junitxml=evidence/after.xml | tee evidence/after.log
+      - name: Changed-file checks
+        env:
+          SKIP: no-commit-to-branch
+        run: |
+          pre-commit run --files lm_eval/models/api_models.py lm_eval/models/openai_completions.py lm_eval/models/utils.py tests/models/test_api_generation_budget.py | tee evidence/precommit.log
+      - name: Runtime and source receipt
+        if: always()
+        run: |
+          python --version > evidence/python.txt
+          uv pip freeze > evidence/packages.txt
+          git rev-parse HEAD HEAD^ > evidence/heads.txt
+          sha256sum lm_eval/models/api_models.py lm_eval/models/openai_completions.py lm_eval/models/utils.py tests/models/test_api_generation_budget.py > evidence/sources.sha256
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: api-budget-${{ matrix.python }}
+          path: evidence
