@@ -4,15 +4,18 @@ import copy
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import Mock
 
 import pytest
 
 from lm_eval.api.instance import Instance
+from lm_eval.models.anthropic_llms import AnthropicChat
 from lm_eval.models.openai_completions import (
     LocalChatCompletion,
     LocalCompletionsAPI,
     OpenAIChatCompletion,
 )
+from lm_eval.models.sglang_generate_API import SGLANGGENERATEAPI
 
 
 @pytest.fixture
@@ -141,11 +144,13 @@ def test_generation_budget_matches_http_payload(
         (LocalCompletionsAPI, "max_tokens"),
         (LocalChatCompletion, "max_tokens"),
         (OpenAIChatCompletion, "max_completion_tokens"),
+        (AnthropicChat, "max_tokens"),
+        (SGLANGGENERATEAPI, "max_new_tokens"),
     ],
 )
 @pytest.mark.parametrize(("limits", "expected_limit"), LIMIT_CASES)
 def test_completion_payload_resolves_length_aliases(
-    model_cls, limit_key, limits, expected_limit
+    model_cls, limit_key, limits, expected_limit, monkeypatch
 ):
     model = model_cls(
         base_url="http://test.invalid/v1/completions",
@@ -153,11 +158,23 @@ def test_completion_payload_resolves_length_aliases(
         tokenizer_backend=None,
         max_gen_toks=6,
     )
-    messages = [{"role": "user", "content": "hello"}]
-    payload = model._create_payload(
-        messages, generate=True, gen_kwargs=copy.deepcopy(limits)
+    messages = (
+        [[1, 2]]
+        if model_cls in (LocalCompletionsAPI, SGLANGGENERATEAPI)
+        else [{"role": "user", "content": "hello"}]
     )
+    if model_cls in (AnthropicChat, SGLANGGENERATEAPI):
+        post = Mock()
+        monkeypatch.setattr("lm_eval.models.api_models.requests.post", post)
+        model.header = {}
+        model.model_call(messages, generate=True, gen_kwargs=copy.deepcopy(limits))
+        payload = post.call_args.kwargs["json"]
+    else:
+        payload = model._create_payload(
+            messages, generate=True, gen_kwargs=copy.deepcopy(limits)
+        )
 
+    payload = payload.get("sampling_params", payload)
     assert payload[limit_key] == expected_limit
     assert {
         "max_gen_toks",
